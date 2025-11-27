@@ -1,1 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MedCode Pro: Coding & Billing Dashboard</title>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
 
+    <style>
+        body {
+            background-color: #f1f5f9;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            color: #334155;
+        }
+
+        /* --- High Fidelity Medical Form CSS --- */
+        .form-container {
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        }
+
+        /* CMS-1500 Specifics */
+        .cms1500-sheet {
+            background: white;
+            font-family: 'Arial Narrow', sans-serif;
+            color: #BE3A34; /* OCR Red */
+            position: relative;
+            font-size: 9px;
+            line-height: 1.1;
+            width: 100%;
+            max-width: 850px;
+            margin: 0 auto;
+            border: 1px solid #e2e8f0;
+        }
+        .cms-header { background: white; padding: 10px; display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #BE3A34; }
+        .cms-section-header { background: #BE3A34; color: white; font-weight: bold; font-size: 10px; padding: 2px 5px; text-transform: uppercase; display: flex; justify-content: space-between; }
+        .cms-row { display: flex; border-bottom: 1px solid #BE3A34; }
+        .cms-box { position: relative; border-right: 1px solid #BE3A34; padding: 2px; min-height: 28px; display: flex; flex-direction: column; }
+        .cms-box:last-child { border-right: none; }
+        .cms-label { font-size: 7px; text-transform: uppercase; margin-bottom: 1px; pointer-events: none; }
+        .cms-input { font-family: 'Courier New', monospace; font-weight: bold; font-size: 12px; color: #000; text-transform: uppercase; background: rgba(255, 255, 0, 0.05); padding: 0 2px; flex: 1; width: 100%; border: none; outline: none; }
+        
+        /* UB-04 Specifics */
+        .ub04-sheet { background: white; font-family: 'Arial Narrow', sans-serif; color: #2d3748; border: 1px solid #333; }
+        .ub-grid { display: grid; grid-template-columns: repeat(24, 1fr); border-bottom: 1px solid #333; }
+        .ub-box { border-right: 1px solid #333; padding: 2px; font-size: 8px; min-height: 30px; }
+
+        /* Animations */
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-pop { animation: fadeIn 0.3s ease-out forwards; }
+        
+        @keyframes pulse-ring { 0% { transform: scale(0.8); opacity: 0.5; } 100% { transform: scale(2); opacity: 0; } }
+        .ai-pulse::before { content: ''; position: absolute; width: 100%; height: 100%; background-color: inherit; border-radius: 50%; z-index: -1; animation: pulse-ring 2s infinite; }
+
+        .custom-scroll::-webkit-scrollbar { width: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        
+        /* Range Slider */
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%; background: #4f46e5; cursor: pointer; margin-top: -6px; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: #e0e7ff; border-radius: 2px; }
+        
+        /* Chart Utils */
+        .donut-chart {
+            width: 100px; height: 100px; border-radius: 50%;
+            background: conic-gradient(#10b981 0% 94%, #e2e8f0 94% 100%);
+            mask: radial-gradient(transparent 60%, black 61%);
+            -webkit-mask: radial-gradient(transparent 60%, black 61%);
+        }
+        
+        /* Confetti Animation */
+        @keyframes confetti-fall {
+            0% { transform: translateY(-10px) rotate(0deg); opacity: 1; }
+            100% { transform: translateY(100px) rotate(720deg); opacity: 0; }
+        }
+        .confetti {
+            position: absolute; width: 8px; height: 8px;
+            animation: confetti-fall 1.5s ease-out forwards;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- 1. DATA & CONSTANTS ---
+        const CODING_QUESTIONS = [
+            { q: "What is the primary purpose of the ICD 10 CM code set?", o: ["To code inpatient procedures only", "To classify diagnoses and reasons for encounters", "To report physician services and procedures", "To describe medical supplies and durable equipment"], a: 1 },
+            { q: "Which code set is used mainly to report physician services and procedures in the outpatient setting?", o: ["ICD 10 CM", "ICD 10 PCS", "CPT", "DRG"], a: 2 },
+            { q: "HCPCS Level II codes are primarily used to report:", o: ["Diagnosis codes", "Surgical approaches", "Hospital room charges only", "Supplies, drugs, and certain non physician services"], a: 3 },
+            { q: "In ICD 10 CM, the character that represents the highest level of specificity is:", o: ["First character", "Third character", "Seventh character", "Ninth character"], a: 2 },
+            { q: "In outpatient coding, the first listed diagnosis is usually:", o: ["The condition that required the most resources", "The condition from a prior visit", "The main reason for the encounter", "Any chronic condition"], a: 2 },
+            { q: "Which of the following is a valid ICD 10 CM code for essential primary hypertension?", o: ["I9", "I10", "I11.0", "R03.0"], a: 1 },
+            { q: "Which ICD 10 CM code category represents type 2 diabetes mellitus?", o: ["E08", "E09", "E10", "E11"], a: 3 },
+            { q: "Which term best describes a code that fully describes a condition with one code?", o: ["Combination code", "Manifestation code", "External cause code", "Provisional code"], a: 0 },
+            { q: "When coding a fracture that is being seen for routine healing follow up, the seventh character usually represents:", o: ["Initial encounter", "Subsequent encounter", "Sequela", "Complication"], a: 1 },
+            { q: "In ICD 10 CM, Z codes are used to report:", o: ["External cause of injuries only", "Procedures", "Factors influencing health status and encounters", "Complications of care"], a: 2 },
+            { q: "What is the primary purpose of CPT modifiers?", o: ["To replace CPT codes", "To show that a service was denied", "To provide additional detail about a procedure or service", "To report diagnoses"], a: 2 },
+            { q: "Modifier 25 indicates:", o: ["Unrelated E&M by same physician in post-op", "Significant separately identifiable E&M on same day", "Repeat procedure by same physician", "Bilateral procedure"], a: 1 },
+            { q: "Modifier 59 is used to indicate:", o: ["Multiple procedures", "Distinct separate procedural service", "Reduced service", "Discontinued procedure"], a: 1 },
+            { q: "Which modifier is used to indicate that only the professional component of a service was performed?", o: ["22", "24", "26", "50"], a: 2 },
+            { q: "Modifier 51 is generally used for:", o: ["Professional component", "Multiple procedures", "Distinct procedural service", "Repeat clinical diagnostic test"], a: 1 },
+            { q: "Which modifier may be used to show that a procedure was performed on both sides of the body?", o: ["50", "52", "53", "76"], a: 0 },
+            { q: "Which document is the primary source for assigning diagnosis and procedure codes?", o: ["Patient registration form", "Provider clinical documentation", "Explanation of benefits", "Insurance card"], a: 1 },
+            { q: "Upcoding refers to:", o: ["Using an outdated code book", "Assigning a code for a less severe condition", "Assigning a higher paying code than supported", "Leaving off necessary codes"], a: 2 },
+            { q: "Unbundling refers to:", o: ["Reporting a single comprehensive code", "Reporting multiple codes for a service that should be bundled", "Reporting codes of different patients together", "Bundling claims from several dates"], a: 1 },
+            { q: "In outpatient settings, signs and symptoms are coded:", o: ["Only if a definitive diagnosis is given", "When a definitive diagnosis is not established", "Never", "Only on Medicare claims"], a: 1 },
+            { q: "A manifestation code in ICD 10 CM:", o: ["Can be reported alone", "Is always reported as first listed diagnosis", "Usually requires an underlying condition code first", "Is used only in inpatient claims"], a: 2 },
+            { q: "Which Medicare part covers physician services and outpatient care in most cases?", o: ["Part A", "Part B", "Part C", "Part D"], a: 1 },
+            { q: "Which Medicare part generally covers inpatient hospital services?", o: ["Part A", "Part B", "Part C", "Part D"], a: 0 },
+            { q: "A deductible is:", o: ["Amount plan pays before patient", "Fixed amount patient pays at each visit", "Amount patient must pay before insurer starts to pay", "Percentage insurance pays"], a: 2 },
+            { q: "Coinsurance is:", o: ["A flat fee for a service", "A percentage of allowed charges the patient pays", "The annual premium", "A refund from the payer"], a: 1 },
+            { q: "A copayment is:", o: ["Fixed amount paid by patient at time of service", "Percentage of charges paid by insurer", "Total allowed amount", "Annual deductible"], a: 0 },
+            { q: "An Explanation of Benefits EOB is sent from:", o: ["Provider to patient", "Payer to provider only", "Payer to patient and sometimes provider", "Patient to payer"], a: 2 },
+            { q: "In medical billing, a clean claim is one that:", o: ["Has high charges", "Contains all required info and passes edits", "Is submitted on paper only", "Has no diagnosis codes"], a: 1 },
+            { q: "A claim denial occurs when:", o: ["Payment is delayed", "Provider refuses payment", "Payer refuses to pay for service as billed", "Patient changes insurance"], a: 2 },
+            { q: "A new patient in an office setting is one who:", o: ["Has never been seen anywhere", "Has not received services from provider in 3 years", "Has a new diagnosis", "Changes insurance"], a: 1 },
+            { q: "Which of the following best describes medical necessity?", o: ["Services requested by patient", "Services consistent with symptoms and standard of care", "Services that yield high reimbursement", "Any service covered by insurance"], a: 1 },
+            { q: "A superbill is:", o: ["A federal claim form", "Office document listing common codes for charge entry", "A denial notice", "A patient refund form"], a: 1 },
+            { q: "Coordination of benefits COB refers to:", o: ["Organizing appointments", "Determining which of multiple plans pays first", "Calculating patient copay", "Collecting deductibles"], a: 1 },
+            { q: "Code Z00.00 in ICD 10 CM describes:", o: ["Encounter for immunization", "General adult medical exam without abnormal findings", "Screening for colon cancer", "Encounter for pregnancy test"], a: 1 },
+            { q: "HCPCS Level II codes starting with J typically represent:", o: ["Durable medical equipment", "Anesthesia services", "Drugs and biologics not self administered", "Laboratory services"], a: 2 },
+            { q: "Modifier 52 is used when:", o: ["Service performed on both sides", "Service partially reduced at physician discretion", "Procedure repeated by same physician", "Unrelated E&M provided"], a: 1 },
+            { q: "The primary role of a medical coder is to:", o: ["Negotiate insurance contracts", "Translate documentation into standardized codes", "Determine patient copays", "Set provider salaries"], a: 1 },
+            { q: "In a payer contract, the term allowable charge refers to:", o: ["Amount provider bills", "Total patient responsibility", "Maximum amount payer will consider for service", "Amount of the copay"], a: 2 },
+            { q: "Medical necessity should be supported by:", o: ["Provider documentation and correct coding", "Patient request alone", "High charge amounts", "Prior authorization alone"], a: 0 },
+            { q: "Which type of code in ICD 10 CM starts with S or T?", o: ["Neoplasm codes", "Pregnancy codes", "Injury and poisoning codes", "Z codes"], a: 2 },
+            { q: "CPT codes are updated:", o: ["Every ten years", "Every five years", "Yearly", "Never"], a: 2 },
+            { q: "ICD 10 CM official coding guidelines are updated:", o: ["Once every twenty years", "Annually", "Every month", "Only when a pandemic occurs"], a: 1 }
+        ];
+
+        const getIcd10Map = (icd11Code, title) => {
+            const t = title.toLowerCase();
+            if (t.includes("headache")) return "R51.9";
+            if (t.includes("migraine")) return "G43.909";
+            if (t.includes("hypertension")) return "I10";
+            if (t.includes("diabetes") && t.includes("2")) return "E11.9";
+            if (t.includes("diabetes") && t.includes("1")) return "E10.9";
+            if (t.includes("asthma")) return "J45.909";
+            if (t.includes("pneumonia")) return "J18.9";
+            if (t.includes("bronchitis")) return "J40";
+            if (t.includes("covid")) return "U07.1";
+            if (t.includes("fracture")) return "M84.4";
+            if (t.includes("pain") && t.includes("back")) return "M54.5";
+            if (t.includes("pain") && t.includes("chest")) return "R07.9";
+            if (t.includes("anxiety")) return "F41.9";
+            if (t.includes("depression")) return "F32.9";
+            const map = { '1': 'A00', '2': 'C00', '3': 'D50', '4': 'E00', '5': 'F00', '6': 'G00', '7': 'H00', '8': 'G00', '9': 'H60', 'A': 'H60', 'B': 'I00', 'C': 'J00', 'D': 'K00', 'E': 'L00', 'F': 'M00', 'G': 'N00' };
+            return map[icd11Code.charAt(0)] || "R69";
+        };
+
+        // --- CDI Rules (AI Logic) ---
+        const CDI_RULES = [
+            { keyword: "headache", questions: ["Intractable or Not Intractable?", "Chronic or Episodic?", "Presence of Aura?", "Location (Frontal, Occipital, etc.)?"] },
+            { keyword: "diabetes", questions: ["Type 1 or Type 2?", "Hyperglycemia/Hypoglycemia present?", "Underlying cause?", "Any complications (Retinopathy, CKD)?", "Long-term insulin use?"] },
+            { keyword: "asthma", questions: ["Severity (Mild, Moderate, Severe)?", "Intermittent or Persistent?", "Uncomplicated or with exacerbation?", "Status asthmaticus present?"] },
+            { keyword: "fracture", questions: ["Open or Closed?", "Displaced or Non-displaced?", "Specific bone segment (Shaft, Head, Neck)?", "Laterality (Left/Right)?", "Encounter type (Initial, Subsequent, Sequela)?"] },
+            { keyword: "pneumonia", questions: ["Organism identified (Viral, Bacterial)?", "Aspiration involved?", "Sepsis present?", "Lobar or Bronchopneumonia?"] },
+            { keyword: "depression", questions: ["Severity (Mild, Moderate, Severe)?", "Single or Recurrent episode?", "Psychotic features present?", "In remission?"] },
+            { keyword: "hypertension", questions: ["Essential or Secondary?", "Malignant or Benign?", "Heart failure or CKD involved?", "Resistant to medication?"] }
+        ];
+
+        // --- Static Data ---
+        const MOCK_CPT_DB = [
+            { code: "99213", title: "Office/outpatient visit, est patient (Low-Mod)", category: "E&M", specialty: "Outpatient", rvu: 2.65 },
+            { code: "99214", title: "Office/outpatient visit, est patient (Mod-High)", category: "E&M", specialty: "Outpatient", rvu: 3.76 },
+            { code: "99215", title: "Office/outpatient visit, est patient (High Complexity)", category: "E&M", specialty: "Outpatient", rvu: 5.42 }, 
+            { code: "99203", title: "Office/outpatient visit, new patient (Low-Mod)", category: "E&M", specialty: "Outpatient", rvu: 3.18 }, 
+            { code: "71045", title: "Radiologic exam, chest; single view", category: "Radiology", specialty: "Radiology", rvu: 0.65 },
+            { code: "71046", title: "Radiologic exam, chest; 2 views", category: "Radiology", specialty: "Radiology", rvu: 0.82 },
+            { code: "74177", title: "CT Abdomen & Pelvis w/ contrast", category: "Radiology", specialty: "Radiology", rvu: 5.50, priorAuth: true },
+            { code: "93000", title: "Electrocardiogram, routine ECG", category: "Cardiology", specialty: "Cardiology", rvu: 0.45 },
+            { code: "36415", title: "Collection of venous blood", category: "Path/Lab", specialty: "Outpatient", rvu: 0.25 },
+            { code: "90791", title: "Psychiatric diagnostic evaluation", category: "Psychiatry", specialty: "Mental Health", rvu: 4.50, priorAuth: true }
+        ];
+
+        const MOCK_PATIENTS = [
+            { id: 'PT001', name: 'John Doe', dob: '01/01/1980' },
+            { id: 'PT002', name: 'Jane Smith', dob: '05/15/1992' },
+            { id: 'PT003', name: 'Robert Johnson', dob: '11/20/1975' }
+        ];
+
+        const MODIFIERS = [
+            { code: "25", desc: "Significant, Separately Identifiable E&M Service" },
+            { code: "59", desc: "Distinct Procedural Service" },
+            { code: "RT", desc: "Right Side" },
+            { code: "LT", desc: "Left Side" },
+            { code: "GA", desc: "Waiver of Liability (ABN on file)" },
+            { code: "XE", desc: "Separate Encounter" }
+        ];
+
+        const POS_CODES = [
+            { code: "11", desc: "Office" },
+            { code: "21", desc: "Inpatient Hospital" },
+            { code: "22", desc: "On Campus-Outpatient Hospital" },
+            { code: "23", desc: "Emergency Room - Hospital" },
+            { code: "31", desc: "Skilled Nursing Facility" }
+        ];
+
+        const TRENDING_CODES = [
+            { code: "RA01", title: "COVID-19 (ICD-11)", source: "ICD-11", icd10: "U07.1" },
+            { code: "99214", title: "Office Visit (Mod-High)", source: "CPT (Mock)" },
+            { code: "J3490", title: "Unclassified drugs", source: "HCPCS" },
+            { code: "E0431", title: "Portable gaseous oxygen system", source: "HCPCS" }
+        ];
+
+        const CF_2025 = 32.74;
+
+        // --- 2. ICONS (SVG Groups) ---
+        const Icon = ({ path, size = 20, className = "", ...props }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>{path}</svg>
+        );
+
+        const Icons = {
+            Home: <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />,
+            Search: <g><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></g>,
+            FileText: <g><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><line x1="10" y1="9" x2="8" y2="9" /></g>,
+            Activity: <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />,
+            Filter: <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />,
+            Plus: <g><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></g>,
+            Trash: <g><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></g>,
+            Clock: <g><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></g>,
+            Clipboard: <g><rect width="8" height="4" x="8" y="2" rx="1" ry="1" /><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /></g>,
+            AlertTriangle: <g><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></g>,
+            Syringe: <g><path d="m18 2 4 4" /><path d="m17 7 3-3" /><path d="M19 9 8.7 19.3c-1 1-2.5 1-3.4 0l-.6-.6c-1-1-1-2.5 0-3.4L15 5" /><path d="m9 11 4 4" /><path d="m5 19-3 3" /><path d="m14 4 6 6" /></g>,
+            Star: <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />,
+            Tool: <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />,
+            CheckCircle: <g><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></g>,
+            ShieldAlert: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />,
+            Calculator: <g><rect x="4" y="2" width="16" height="20" rx="2" /><line x1="8" y1="6" x2="16" y2="6" /><line x1="16" y1="14" x2="16" y2="14" /><line x1="12" y1="14" x2="12" y2="14" /><line x1="8" y1="14" x2="8" y2="14" /><line x1="16" y1="18" x2="16" y2="18" /><line x1="12" y1="18" x2="12" y2="18" /><line x1="8" y1="18" x2="8" y2="18" /></g>,
+            Refresh: <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />,
+            Lock: <g><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></g>,
+            Brain: <g><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z" /><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z" /></g>,
+            UserCheck: <g><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><polyline points="16 11 18 13 22 9" /></g>,
+            Command: <g><rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><path d="M7 7h10v10H7z" /></g>,
+            FileSignature: <g><path d="M20 22h-2" /><path d="M20 15v2h-2" /><path d="M4 19.5V4a2 2 0 0 1 2-2h8.5L20 7.5V11" /><path d="M8 18h1" /><path d="M18.42 9.61a2.1 2.1 0 1 1 2.97 2.97L16.85 17.14a2 2 0 0 1-1 .43l-4.17 1.17 1.17-4.17a2 2 0 0 1 .43-1Z" /></g>,
+            TrendingUp: <g><polyline points="22 7 13.5 15.5 8.5 10.5 2 17" /><polyline points="16 7 22 7 22 13" /></g>,
+            CreditCard: <g><rect width="20" height="14" x="2" y="5" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></g>,
+            BarChart: <g><line x1="12" y1="20" x2="12" y2="10" /><line x1="18" y1="20" x2="18" y2="4" /><line x1="6" y1="20" x2="6" y2="16" /></g>,
+            Trophy: <g><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" /><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" /><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" /></g>
+        };
+
+        // --- 3. SHARED COMPONENTS ---
+        const NavItem = ({ active, onClick, icon, label }) => (
+            <button onClick={onClick} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 ${active ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900'}`}>
+                <Icon path={icon} size={20} />
+                {label}
+            </button>
+        );
+
+        const SearchTab = ({ active, onClick, label, icon }) => (
+            <button onClick={onClick} className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${active ? 'border-blue-600 text-blue-700 bg-blue-50/50' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}>
+                <Icon path={icon} size={18} />
+                <span className="hidden sm:inline">{label}</span>
+                <span className="sm:hidden">{label.split(' ')[0]}</span>
+            </button>
+        );
+
+        const Badge = ({ type }) => {
+            const styles = { 'ICD-11': 'bg-emerald-100 text-emerald-800 border-emerald-200', 'HCPCS': 'bg-purple-100 text-purple-800 border-purple-200', 'CPT (Mock)': 'bg-amber-100 text-amber-800 border-amber-200' };
+            return <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${styles[type] || 'bg-gray-100 text-gray-800'}`}>{type}</span>;
+        };
+
+        // --- 4. HELPER COMPONENTS & MODALS (Defined before usage) ---
+        const Confetti = () => {
+            const particles = Array.from({ length: 30 }).map((_, i) => ({
+                left: Math.random() * 100 + '%',
+                bg: ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff'][Math.floor(Math.random() * 5)],
+                delay: Math.random() * 1 + 's'
+            }));
+            return (
+                <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-2xl z-50">
+                    {particles.map((p, i) => (
+                        <div key={i} className="confetti" style={{ left: p.left, backgroundColor: p.bg, animationDelay: p.delay, top: '-10px' }}></div>
+                    ))}
+                </div>
+            );
+        };
+
+        const DailyChallenge = () => {
+            const [answered, setAnswered] = useState(false);
+            const [isCorrect, setIsCorrect] = useState(false);
+            const [question, setQuestion] = useState({ q: "", o: [], a: 0 });
+
+            useEffect(() => {
+                const randomIndex = Math.floor(Math.random() * CODING_QUESTIONS.length);
+                setQuestion(CODING_QUESTIONS[randomIndex]);
+            }, []);
+
+            const handleAnswer = (index) => {
+                if (answered) return;
+                setAnswered(true);
+                setIsCorrect(index === question.a);
+            };
+
+            return (
+                <div className="bg-gradient-to-br from-indigo-600 to-blue-700 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
+                    {isCorrect && <Confetti />}
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2"><Icon path={Icons.Trophy} size={24} className="text-yellow-300" /><h3 className="font-bold text-lg">Daily Challenge</h3></div>
+                        <span className="text-xs bg-white/20 px-2 py-1 rounded font-medium">Coding Quiz</span>
+                    </div>
+                    <p className="text-white/90 font-medium mb-6 text-sm leading-relaxed">{question.q}</p>
+                    <div className="grid grid-cols-2 gap-3">
+                        {question.o.map((opt, index) => (
+                            <button 
+                                key={index}
+                                onClick={() => handleAnswer(index)}
+                                className={`py-2 px-3 rounded-lg text-xs font-bold transition-all duration-300 text-left ${
+                                    answered 
+                                        ? index === question.a 
+                                            ? 'bg-green-500 text-white scale-105 shadow-lg' 
+                                            : 'bg-white/10 text-white/50' 
+                                        : 'bg-white text-indigo-700 hover:bg-indigo-50'
+                                }`}
+                            >
+                                {opt}
+                            </button>
+                        ))}
+                    </div>
+                    {answered && (
+                        <div className={`mt-4 text-center text-xs font-bold uppercase tracking-wider ${isCorrect ? 'text-green-300' : 'text-red-300'}`}>
+                            {isCorrect ? "Correct! +50 XP" : "Incorrect. Try again tomorrow!"}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const CommandPalette = ({ isOpen, onClose, onAdd }) => {
+            const [search, setSearch] = useState('');
+            const inputRef = useRef(null);
+            useEffect(() => { if (isOpen && inputRef.current) inputRef.current.focus(); }, [isOpen]);
+            if (!isOpen) return null;
+            const filteredCodes = MOCK_CPT_DB.filter(i => i.code.includes(search) || i.title.toLowerCase().includes(search.toLowerCase())).slice(0, 3);
+            const filteredMods = MODIFIERS.filter(i => i.code.includes(search.toUpperCase()) || i.desc.toLowerCase().includes(search.toLowerCase())).slice(0, 3);
+            const filteredPatients = MOCK_PATIENTS.filter(i => i.name.toLowerCase().includes(search.toLowerCase()) || i.id.includes(search)).slice(0, 2);
+            const hasResults = filteredCodes.length > 0 || filteredMods.length > 0 || filteredPatients.length > 0;
+            return (
+                <div className="fixed inset-0 bg-black/50 z-[100] flex items-start justify-center pt-20 p-4 animate-in fade-in duration-150" onClick={onClose}>
+                    <div className="bg-white w-full max-w-xl rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
+                        <div className="p-4 border-b border-gray-100 flex items-center gap-3">
+                            <Icon path={Icons.Search} className="text-gray-400" size={20} />
+                            <input ref={inputRef} type="text" className="flex-1 text-lg outline-none text-gray-700 placeholder-gray-400" placeholder="Type a command or search..." value={search} onChange={e => setSearch(e.target.value)} />
+                            <button onClick={onClose} className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded text-gray-500 font-bold cursor-pointer transition-colors">ESC</button>
+                        </div>
+                        <div className="overflow-y-auto p-2 custom-scroll">
+                            {!hasResults && search && <div className="p-4 text-center text-gray-400">No results found.</div>}
+                            {filteredCodes.length > 0 && (<div className="mb-2"><div className="text-xs font-bold text-gray-400 uppercase px-3 py-2">Procedures</div>{filteredCodes.map(item => (<button key={item.code} onClick={() => { onAdd({...item, source: 'CPT (Mock)'}); onClose(); }} className="w-full text-left px-3 py-2 hover:bg-blue-50 rounded flex justify-between items-center group"><div className="flex items-center gap-3"><Icon path={Icons.FileText} size={14} className="text-gray-400" /><span className="font-mono font-bold text-sm">{item.code}</span><span className="text-sm text-gray-600 truncate max-w-[200px]">{item.title}</span></div><span className="text-xs text-blue-600 opacity-0 group-hover:opacity-100">Add</span></button>))}</div>)}
+                            {filteredMods.length > 0 && (<div className="mb-2"><div className="text-xs font-bold text-gray-400 uppercase px-3 py-2">Modifiers</div>{filteredMods.map(item => (<div key={item.code} className="px-3 py-2 hover:bg-gray-50 rounded flex items-center gap-3"><Icon path={Icons.Tool} size={14} className="text-gray-400" /><span className="font-mono font-bold text-sm bg-gray-100 px-1 rounded">{item.code}</span><span className="text-sm text-gray-600">{item.desc}</span></div>))}</div>)}
+                            {filteredPatients.length > 0 && (<div className="mb-2"><div className="text-xs font-bold text-gray-400 uppercase px-3 py-2">Patients</div>{filteredPatients.map(item => (<div key={item.id} className="px-3 py-2 hover:bg-gray-50 rounded flex justify-between items-center"><div className="flex items-center gap-3"><Icon path={Icons.UserCheck} size={14} className="text-gray-400" /><span className="text-sm font-medium">{item.name}</span></div><span className="text-xs text-gray-400">{item.id}</span></div>))}</div>)}
+                        </div>
+                        <div className="bg-gray-50 p-2 text-[10px] text-gray-400 flex justify-between px-4"><span>Search Codes, Modifiers, Patients...</span><span>MedCode Pro v1.2</span></div>
+                    </div>
+                </div>
+            );
+        };
+
+        const AppealModal = ({ risks, onClose }) => {
+            const [text, setText] = useState('');
+            const [copied, setCopied] = useState(false);
+            useEffect(() => {
+                const today = new Date().toLocaleDateString();
+                let reasonText = "coding discrepancies";
+                if (risks.items.some(r => r.message.includes('Modifier 59'))) reasonText = "incorrect application of bundling edits regarding Modifier 59";
+                else if (risks.items.some(r => r.message.includes('New Patient'))) reasonText = "incorrect classification of patient status (New vs Established)";
+                else if (risks.items.some(r => r.message.includes('Level 5'))) reasonText = "medical necessity documentation requirements for high complexity visits";
+                setText(`Date: ${today}\nRe: Appeal for Claim Denial\nPatient: John Doe | ID: 123456789\nClaim ID: [Insert Claim #]\n\nTo Whom It May Concern,\n\nWe are writing to appeal the denial of the above referenced claim. The denial was based on ${reasonText}.\n\nMedical Necessity Justification:\nThe services provided were medically necessary and distinct. Per CPT guidelines and NCCI policy manual Chapter 1, the procedure performed requires separate reporting because [Insert Clinical Specifics: e.g., different anatomical site, separate incision, separate patient encounter].\n\nWe have attached the full operative report and clinical notes which substantiate the use of the reported codes and modifiers.\n\nPlease review this documentation and reprocess the claim for payment.\n\nSincerely,\nBilling Department\nGeneral Hospital`);
+            }, [risks]);
+            const handleCopy = () => {
+                const el = document.createElement('textarea');
+                el.value = text;
+                document.body.appendChild(el);
+                el.select();
+                document.execCommand('copy');
+                document.body.removeChild(el);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+            };
+            return (
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4 animate-in fade-in duration-200 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-pop h-[80vh] flex flex-col">
+                        <div className="bg-gray-900 p-4 text-white flex justify-between items-center"><div className="flex items-center gap-2"><Icon path={Icons.FileSignature} size={20} /> <h3 className="font-bold text-lg">Denial Defense: Appeal Generator</h3></div><button onClick={onClose} className="hover:bg-white/20 p-1 rounded"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
+                        <div className="flex-1 p-6 flex flex-col"><div className="mb-4 bg-blue-50 p-3 rounded-lg border border-blue-100 text-sm text-blue-800"><strong>AI Assistant:</strong> I've drafted an appeal based on the detected risk factors. Please customize the bracketed sections before sending.</div><textarea className="flex-1 w-full border border-gray-300 rounded-xl p-4 font-mono text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none" value={text} onChange={(e) => setText(e.target.value)}></textarea></div>
+                        <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50"><button onClick={onClose} className="px-4 py-2 text-gray-600 font-bold hover:bg-gray-200 rounded-lg">Cancel</button><button onClick={handleCopy} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow flex items-center gap-2">{copied ? <><Icon path={Icons.CheckCircle} size={18} /> Copied</> : <><Icon path={Icons.Clipboard} size={18} /> Copy Letter</>}</button></div>
+                    </div>
+                </div>
+            );
+        };
+
+        const EligibilityModal = ({ onClose }) => {
+            const [id, setId] = useState('123456789');
+            const [status, setStatus] = useState('idle');
+            const verify = () => { setStatus('verifying'); setTimeout(() => { if (id.toUpperCase().startsWith('X')) setStatus('inactive'); else setStatus('active'); }, 1500); };
+            return (
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-pop border border-blue-100">
+                        <div className="bg-blue-600 p-4 text-white flex justify-between items-center"><div className="flex items-center gap-2"><Icon path={Icons.UserCheck} size={24} /> <h3 className="font-bold text-lg">Patient Eligibility (270/271)</h3></div><button onClick={onClose} className="hover:bg-white/20 p-1 rounded"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
+                        <div className="p-6"><div className="mb-6"><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Member ID</label><div className="flex gap-2"><input type="text" value={id} onChange={e => setId(e.target.value)} className="flex-1 border border-gray-300 rounded-lg px-3 py-2 font-mono text-gray-800 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Enter Member ID" /><button onClick={verify} disabled={status === 'verifying'} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold shadow disabled:opacity-50">{status === 'verifying' ? '...' : 'Verify'}</button></div><p className="text-[10px] text-gray-400 mt-1">Tip: Start ID with 'X' to simulate termination.</p></div>{status === 'verifying' && <div className="text-center py-8 space-y-3"><div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto"></div><p className="text-blue-600 font-medium text-sm">Connecting to Payer Gateway...</p></div>}{status === 'active' && <div className="animate-in slide-in-from-bottom-2 duration-300"><div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-4 flex items-center gap-3"><div className="bg-green-100 p-2 rounded-full"><Icon path={Icons.CheckCircle} className="text-green-600" size={24} /></div><div><h4 className="font-bold text-green-800">Active Coverage</h4><p className="text-xs text-green-700">Medicare Part B • Effective: 01/01/2024</p></div></div><div className="space-y-2 text-sm"><div className="flex justify-between border-b border-gray-100 pb-1"><span className="text-gray-500">Payer</span><span className="font-medium">CMS Medicare</span></div><div className="flex justify-between border-b border-gray-100 pb-1"><span className="text-gray-500">Deductible Rem.</span><span className="font-mono font-bold">$145.00</span></div><div className="flex justify-between border-b border-gray-100 pb-1"><span className="text-gray-500">Co-Insurance</span><span className="font-medium">80/20</span></div><div className="flex justify-between"><span className="text-gray-500">Copay</span><span className="font-medium">$0.00</span></div></div></div>}{status === 'inactive' && <div className="animate-in slide-in-from-bottom-2 duration-300"><div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4 flex items-center gap-3"><div className="bg-red-100 p-2 rounded-full"><Icon path={Icons.ShieldAlert} className="text-red-600" size={24} /></div><div><h4 className="font-bold text-red-800">Coverage Inactive</h4><p className="text-xs text-red-700">Terminated: 12/31/2023</p></div></div><div className="text-xs text-gray-500"><p className="mb-2"><strong>Reason Code 26:</strong> Expenses incurred after coverage terminated.</p><p>Please obtain updated insurance information from patient.</p></div></div>}</div>
+                    </div>
+                </div>
+            );
+        };
+        
+        const PriorAuthModal = ({ item, onClose }) => {
+            const [status, setStatus] = useState('idle');
+            useEffect(() => { if (status === 'idle') setTimeout(() => setStatus('analyzing'), 500); if (status === 'analyzing') setTimeout(() => { if (item.code === '74177') setStatus('requesting_docs'); else setStatus('approved'); }, 2000); }, [status, item]);
+            return (
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200 backdrop-blur-sm"><div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-pop border border-purple-100"><div className="bg-purple-600 p-4 text-white flex justify-between items-center"><div className="flex items-center gap-2"><Icon path={Icons.Brain} size={24} className="animate-pulse" /> <h3 className="font-bold text-lg">AI Prior Auth Simulator</h3></div><button onClick={onClose} className="hover:bg-white/20 p-1 rounded"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div><div className="p-6"><div className="mb-6 text-center"><div className="font-mono text-2xl font-bold text-gray-800">{item.code}</div><div className="text-sm text-gray-500">{item.title}</div></div>{status === 'analyzing' && <div className="space-y-4 text-center py-8"><div className="relative w-16 h-16 mx-auto bg-purple-100 rounded-full flex items-center justify-center ai-pulse"><Icon path={Icons.Brain} size={32} className="text-purple-600" /></div><p className="text-purple-800 font-medium animate-pulse">AI Analyzing Payer Rules...</p></div>}{status === 'approved' && <div className="text-center space-y-4 animate-in zoom-in duration-300"><div className="w-16 h-16 mx-auto bg-green-100 rounded-full flex items-center justify-center"><Icon path={Icons.CheckCircle} size={40} className="text-green-600" /></div><div><h3 className="text-xl font-bold text-green-700">Auth Approved</h3><p className="text-xs text-gray-500">Auth #: PA-2025-X9928</p></div><div className="bg-green-50 p-3 rounded-lg border border-green-100 text-xs text-left"><strong>AI Analysis:</strong> Procedure meets medical necessity criteria based on provided diagnosis. No clinicals required.</div></div>}{status === 'requesting_docs' && <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-300"><div className="bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-start gap-3"><Icon path={Icons.AlertTriangle} className="text-amber-600 shrink-0" /><div><h4 className="font-bold text-amber-800 text-sm">Additional Information Required</h4><p className="text-xs text-amber-700 mt-1">Payer rules for <strong>{item.code}</strong> require clinical documentation for medical necessity.</p></div></div><button onClick={() => setStatus('analyzing')} className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 transition-all"><Icon path={Icons.Clipboard} size={18} /> Simulate Uploading Notes</button></div>}</div></div></div>
+            );
+        };
+
+        const CDIModal = ({ item, onClose, onConfirm }) => {
+            const rule = CDI_RULES.find(r => item.title.toLowerCase().includes(r.keyword));
+            const questions = rule ? rule.questions : ["Laterality?", "Acuity?", "Episode of Care?", "Specific site?"];
+            const [copied, setCopied] = useState(false);
+            const copyQuery = () => { const text = `Physician Query: Regarding ${item.code} - ${item.title}, please specify: ${questions.join(', ')}`; const el = document.createElement('textarea'); el.value = text; document.body.appendChild(el); el.select(); document.execCommand('copy'); document.body.removeChild(el); setCopied(true); setTimeout(() => setCopied(false), 2000); };
+            return (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"><div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-pop"><div className="bg-indigo-600 p-4 text-white flex items-start gap-3"><div className="bg-white/20 p-2 rounded-lg"><Icon path={<g><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-1 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.8.7 1.3 1.5 1.5 2.5" /><path d="M9 18h6" /><path d="M10 22h4" /></g>} size={24} /></div><div><h3 className="font-bold text-lg">Documentation Improvement</h3><p className="text-indigo-100 text-xs opacity-90">Specificity Missing for: <span className="font-mono bg-indigo-700 px-1 rounded">{item.code}</span></p></div></div><div className="p-6"><p className="text-gray-600 text-sm mb-4">The selected code <strong>"{item.title}"</strong> is unspecified.</p><div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 mb-6 space-y-2">{questions.map((q, i) => (<div key={i} className="flex items-start gap-2 text-indigo-900 text-sm font-medium"><span className="text-indigo-400 mt-0.5">•</span>{q}</div>))}</div><div className="flex gap-3"><button onClick={copyQuery} className={`flex-1 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all ${copied ? 'bg-green-100 text-green-700' : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'}`}>{copied ? "Copied!" : "Copy Query"}</button><button onClick={onConfirm} className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl text-sm font-bold shadow-lg">Use Unspecified</button></div><button onClick={onClose} className="w-full mt-3 text-xs text-gray-400 hover:text-gray-600">Cancel selection</button></div></div></div>);
+        };
+
+        const PatientEstimatorModal = ({ total, onClose }) => {
+            const [amount, setAmount] = useState(total); const [coIns, setCoIns] = useState(20); const [deductible, setDeductible] = useState(0); const taxableAmount = Math.max(0, amount - deductible); const patientShare = (taxableAmount * (coIns / 100)) + parseFloat(deductible); const insuranceShare = amount - patientShare;
+            return (<div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200 backdrop-blur-sm"><div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-pop"><div className="bg-emerald-600 p-4 text-white flex justify-between items-center"><h2 className="text-lg font-bold flex items-center gap-2"><Icon path={Icons.Calculator} size={20} /> Patient Cost Estimator</h2><button onClick={onClose} className="hover:bg-white/20 p-1 rounded"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div><div className="p-6 space-y-6"><div><label className="text-xs font-bold text-gray-500 uppercase block mb-1">Total Charges ($)</label><input type="number" value={amount} onChange={e => setAmount(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 font-mono text-lg font-bold text-gray-800 focus:ring-2 focus:ring-emerald-500 outline-none" /></div><div><label className="text-xs font-bold text-gray-500 uppercase block mb-1">Deductible Remaining ($)</label><input type="number" value={deductible} onChange={e => setDeductible(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-800 focus:ring-2 focus:ring-emerald-500 outline-none" /></div><div><div className="flex justify-between mb-2"><label className="text-xs font-bold text-gray-500 uppercase">Co-Insurance</label><span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">{coIns}% Patient Resp</span></div><input type="range" min="0" max="100" step="5" value={coIns} onChange={e => setCoIns(e.target.value)} className="w-full accent-emerald-600 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer" /><div className="flex justify-between text-[10px] text-gray-400 mt-1"><span>0%</span><span>20% (Medicare)</span><span>50%</span><span>100%</span></div></div><div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-2"><div className="flex justify-between items-center"><span className="text-sm text-gray-600">Insurance Pays</span><span className="font-bold text-gray-800">${insuranceShare.toFixed(2)}</span></div><div className="border-t border-gray-200 my-2"></div><div className="flex justify-between items-center"><span className="text-base font-bold text-emerald-800">Patient Pays</span><span className="text-xl font-extrabold text-emerald-600">${patientShare.toFixed(2)}</span></div><p className="text-[10px] text-center text-gray-400 mt-2">*Good Faith Estimate based on entered values.</p></div></div></div></div>);
+        };
+
+        const RiskReportModal = ({ risks, onClose, onAppeal }) => (
+            <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-pop">
+                    <div className={`p-6 text-white flex items-center justify-between ${risks.level === 'High' ? 'bg-red-600' : risks.level === 'Medium' ? 'bg-amber-500' : 'bg-green-600'}`}>
+                        <div className="flex items-center gap-3"><div className="bg-white/20 p-2 rounded-full"><Icon path={Icons.ShieldAlert} size={28} /></div><div><h2 className="text-xl font-bold">Denial Risk Report</h2><p className="text-white/90 text-sm font-medium">Risk Level: {risks.level}</p></div></div>
+                        <button onClick={onClose} className="bg-white/20 hover:bg-white/30 p-2 rounded-full transition-colors"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+                    </div>
+                    <div className="p-6">
+                        {risks.items.length === 0 ? <div className="text-center py-8"><Icon path={Icons.CheckCircle} size={48} className="text-green-500 mx-auto mb-3" /><h3 className="text-lg font-bold text-gray-900">Clean Claim</h3><p className="text-gray-500">No automated risks detected.</p></div> : 
+                        <div className="space-y-4">
+                            <p className="text-sm text-gray-500">The following issues may cause a denial:</p>
+                            {risks.items.map((r, i) => (<div key={i} className={`p-4 rounded-xl border-l-4 ${r.severity === 'High' ? 'bg-red-50 border-red-500' : 'bg-amber-50 border-amber-500'}`}><div className="flex justify-between items-start mb-1"><span className={`text-xs font-bold uppercase tracking-wider ${r.severity === 'High' ? 'text-red-700' : 'text-amber-700'}`}>{r.severity} Risk</span></div><p className="text-gray-800 font-medium text-sm">{r.message}</p></div>))}
+                            {(risks.level === 'High' || risks.level === 'Medium') && (
+                                <button onClick={onAppeal} className="w-full py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 transition-all mt-4">
+                                    <Icon path={Icons.FileText} size={18} /> Generate Appeal Letter
+                                </button>
+                            )}
+                        </div>}
+                        <div className="mt-6 pt-4 border-t border-gray-100 flex justify-end"><button onClick={onClose} className="px-6 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-lg transition-colors">Close Report</button></div>
+                    </div>
+                </div>
+            </div>
+        );
+
+        // --- 5. FORMS & SCREENS (Defined in order) ---
+
+        const RevenueAnalytics = ({ favorites }) => {
+            const [timeRange, setTimeRange] = useState('Month');
+            const basePipelineValue = favorites.reduce((acc, item) => acc + (item.rvu ? item.rvu * CF_2025 : 0), 0).toFixed(0);
+            const pipelineMult = timeRange === 'Month' ? 1 : timeRange === 'Quarter' ? 3 : 12;
+            const pipelineDisplay = (basePipelineValue * pipelineMult).toFixed(0);
+
+            const chartColors = {
+                'indigo': { bg: 'bg-indigo-100', bar: 'bg-indigo-500', hover: 'hover:bg-indigo-200' },
+                'blue': { bg: 'bg-blue-100', bar: 'bg-blue-500', hover: 'hover:bg-blue-200' },
+                'emerald': { bg: 'bg-emerald-100', bar: 'bg-emerald-500', hover: 'hover:bg-emerald-200' }
+            };
+
+            const analyticsData = {
+                'Month': { 
+                    kpis: [{ label: "Current Pipeline", value: `$${pipelineDisplay}`, change: "Live", trend: "up" }, { label: "Total Revenue", value: "$1.2M", change: "+12%", trend: "up" }, { label: "Clean Claim Rate", value: "94%", change: "+2%", trend: "up" }, { label: "Denial Rate", value: "4.2%", change: "-0.8%", trend: "up" }], 
+                    chart: { title: "Revenue Trend (6 Mo)", labels: ["May", "Jun", "Jul", "Aug", "Sep", "Oct"], values: [40, 65, 55, 80, 70, 95], color: "indigo", unit: "k" } 
+                },
+                'Quarter': { 
+                    kpis: [{ label: "Pipeline (Q4)", value: `$${(basePipelineValue * 3).toFixed(0)}`, change: "Proj.", trend: "up" }, { label: "Revenue (Q3)", value: "$3.5M", change: "+8%", trend: "up" }, { label: "Clean Claim Rate", value: "96%", change: "+1.5%", trend: "up" }, { label: "Avg Days in AR", value: "22", change: "-2 days", trend: "up" }], 
+                    chart: { title: "Revenue Trend (Quarterly)", labels: ["Q4 '23", "Q1 '24", "Q2 '24", "Q3 '24"], values: [310, 340, 325, 380], color: "blue", unit: "k" } 
+                },
+                'Year': { 
+                    kpis: [{ label: "Annual Pipeline", value: `$${(basePipelineValue * 12).toFixed(0)}`, change: "Proj.", trend: "up" }, { label: "Total Revenue", value: "$14.2M", change: "+15%", trend: "up" }, { label: "Clean Claim Rate", value: "97%", change: "+4%", trend: "up" }, { label: "Denial Rate", value: "3.8%", change: "-1.2%", trend: "up" }], 
+                    chart: { title: "Revenue Trend (Yearly)", labels: ["2020", "2021", "2022", "2023", "2024"], values: [8.5, 9.8, 11.2, 12.9, 14.2], color: "emerald", unit: "M" } 
+                }
+            };
+
+            const currentData = analyticsData[timeRange];
+            const colors = chartColors[currentData.chart.color];
+
+            const topCodes = [{ code: "99213", desc: "Office Visit Level 3", rev: timeRange === 'Year' ? "$4.2M" : timeRange === 'Quarter' ? "$1.1M" : "$450k" }, { code: "99214", desc: "Office Visit Level 4", rev: timeRange === 'Year' ? "$3.8M" : timeRange === 'Quarter' ? "$950k" : "$320k" }, { code: "74177", desc: "CT Abdomen", rev: timeRange === 'Year' ? "$1.5M" : timeRange === 'Quarter' ? "$400k" : "$180k" }];
+
+            return (
+                <div className="p-8 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 h-full overflow-y-auto custom-scroll">
+                    <div className="flex justify-between items-center mb-2"><div><h2 className="text-2xl font-bold text-gray-900">Revenue Analytics</h2><p className="text-sm text-gray-500">Financial performance overview.</p></div><div className="bg-white border border-gray-200 rounded-lg p-1 text-xs flex gap-2">{['Month', 'Quarter', 'Year'].map(r => <button key={r} onClick={() => setTimeRange(r)} className={`px-3 py-1 rounded ${timeRange === r ? 'bg-gray-100 font-bold text-gray-700' : 'text-gray-500 hover:bg-gray-50'}`}>{r}</button>)}</div></div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">{currentData.kpis.map((k, i) => (<div key={i} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100"><p className="text-xs font-bold text-gray-400 uppercase">{k.label}</p><div className="flex items-end justify-between mt-1"><h3 className="text-2xl font-extrabold text-gray-900">{k.value}</h3><span className={`text-xs font-bold px-1.5 py-0.5 rounded ${k.trend === 'up' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{k.change}</span></div></div>))}</div>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-64">
+                        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex flex-col relative overflow-hidden">
+                            <div className="flex justify-between items-center mb-4"><h4 className="font-bold text-gray-800 text-sm">{currentData.chart.title}</h4><span className="text-xs text-gray-400">Live Data</span></div>
+                            <div className="flex-1 flex items-end justify-between gap-2 px-2">{currentData.chart.values.map((h, i) => { const max = Math.max(...currentData.chart.values); const height = (h/max)*100; return (<div key={i} className={`w-full h-full ${colors.bg} rounded-t ${colors.hover} transition-colors relative group`}><div className={`absolute bottom-0 w-full ${colors.bar} rounded-t transition-all duration-500`} style={{height: `${height}%`}}></div><div className="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-black text-white text-[10px] py-1 px-2 rounded whitespace-nowrap">${h}{currentData.chart.unit}</div></div>); })}</div>
+                            <div className="flex justify-between text-[10px] text-gray-400 mt-2 px-2">{currentData.chart.labels.map((l, i) => <span key={i}>{l}</span>)}</div>
+                        </div>
+                        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex items-center gap-8"><div className="donut-chart shrink-0 relative w-40 h-40 flex items-center justify-center"><div className="absolute inset-0 rounded-full" style={{background: 'conic-gradient(#3b82f6 0% 45%, #10b981 45% 75%, #f59e0b 75% 100%)'}}></div><div className="absolute inset-4 bg-white rounded-full flex flex-col items-center justify-center"><span className="text-2xl font-bold text-gray-800">Mix</span><span className="text-[10px] text-gray-400">By Volume</span></div></div><div className="space-y-3 flex-1"><div className="flex justify-between items-center text-xs"><div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-blue-500"></span> Medicare</div><span className="font-bold">45%</span></div><div className="flex justify-between items-center text-xs"><div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-green-500"></span> Commercial</div><span className="font-bold">30%</span></div><div className="flex justify-between items-center text-xs"><div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-amber-500"></span> Self-Pay</div><span className="font-bold">25%</span></div></div></div>
+                    </div>
+                     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden"><div className="p-4 border-b border-gray-100 flex justify-between items-center"><h4 className="font-bold text-gray-800 text-sm">Top Performing Codes</h4><button className="text-xs text-blue-600 font-medium hover:underline">View All</button></div><table className="w-full text-sm text-left"><thead className="bg-gray-50 text-gray-500 text-xs uppercase"><tr><th className="px-4 py-2 font-medium">Code</th><th className="px-4 py-2 font-medium">Description</th><th className="px-4 py-2 font-medium text-right">Revenue</th></tr></thead><tbody className="divide-y divide-gray-100">{topCodes.map((code, i) => (<tr key={i} className="hover:bg-gray-50 transition-colors"><td className="px-4 py-3 font-mono font-bold text-blue-700">{code.code}</td><td className="px-4 py-3 text-gray-600">{code.desc}</td><td className="px-4 py-3 font-bold text-right text-gray-900">{code.rev}</td></tr>))}</tbody></table></div>
+                </div>
+            );
+        };
+
+        const CMS1500Form = ({ diagnosisCodes, procedureCodes, pos }) => {
+            const patient = { name: "DOE, JOHN A.", dob: "01/01/1980", address: "123 MAPLE DR", city: "ANYTOWN", state: "NY", zip: "10001" };
+            return (
+                <div className="cms1500-sheet form-container">
+                    <div className="cms-header"><div style={{width: '60%'}}><div className="cms-label" style={{fontSize: '9px', fontWeight: 'bold'}}>1. MEDICARE</div><div className="text-black font-mono font-bold text-sm">X</div></div><div style={{width: '40%'}}><div className="cms-label">CARRIER</div><div className="text-black font-mono font-bold">MEDICARE</div></div></div>
+                    <div className="cms-row"><div className="cms-box" style={{flex: 1, borderRight: 'none', background: '#e2e8f0'}}><div className="cms-label" style={{color: 'black', fontWeight: 'bold', padding: '2px'}}>PATIENT AND INSURED INFORMATION</div></div></div>
+                    <div className="cms-row"><div className="cms-box" style={{flex: '3'}}><div className="cms-label">2. PATIENT'S NAME</div><div className="cms-input">{patient.name}</div></div><div className="cms-box" style={{flex: '1'}}><div className="cms-label">3. PATIENT'S BIRTH DATE</div><div className="cms-input">{patient.dob}</div></div><div className="cms-box" style={{flex: '2'}}><div className="cms-label">4. INSURED'S NAME</div><div className="cms-input">{patient.name}</div></div></div>
+                    <div className="cms-row"><div className="cms-box" style={{flex: '3'}}><div className="cms-label">5. PATIENT'S ADDRESS</div><div className="cms-input">{patient.address}</div></div><div className="cms-box" style={{flex: '3'}}><div className="cms-label">6. PATIENT RELATIONSHIP</div><div className="cms-input">SELF</div></div></div>
+                    <div className="cms-section-header" style={{marginTop: '10px'}}>PHYSICIAN OR SUPPLIER INFORMATION</div>
+                    <div className="cms-row"><div className="cms-box" style={{width: '100%'}}><div className="cms-label">21. DIAGNOSIS OR NATURE OF ILLNESS (ICD-10-CM REQUIRED)</div><div className="grid grid-cols-2 gap-2 p-1">{[0,1,2,3,4,5,6,7].map(i => {
+                        const item = diagnosisCodes[i];
+                        // Use icd10 code if available, otherwise fallback to code
+                        const displayCode = item ? (item.icd10 || item.code) : '';
+                        return (<div key={i} className="flex gap-2 items-center border-b border-red-200"><span className="font-bold text-[8px]">{String.fromCharCode(65+i)}.</span><span className="font-mono text-black font-bold text-xs">{displayCode}</span></div>)
+                    })}</div></div></div>
+                    <div className="cms-row" style={{borderBottom: '2px solid #BE3A34'}}><div className="cms-box" style={{width: '100%', padding: 0}}><div className="cms-label" style={{padding: '2px'}}>24. A. DATE(S) | B. PLACE | C. EMG | D. PROCEDURES | E. DX PTR | F. CHARGES | G. DAYS | J. PROV ID</div><div className="flex text-[8px] font-bold text-center bg-red-50 border-b border-[#BE3A34]"><div style={{width: '15%'}}>DATE</div><div style={{width: '5%'}}>POS</div><div style={{width: '30%'}}>CPT/HCPCS</div><div style={{width: '10%'}}>DX</div><div style={{width: '15%'}}>$$$</div><div style={{width: '10%'}}>QTY</div><div style={{width: '15%'}}>NPI</div></div>{[0,1,2,3,4,5].map(idx => { const item = procedureCodes[idx]; return (<div key={idx} className="flex border-b border-red-200 h-6 items-center text-center font-mono text-xs text-black"><div style={{width: '15%', borderRight:'1px solid #ffcccc'}}>{item ? '01 01 25' : ''}</div><div style={{width: '5%', borderRight:'1px solid #ffcccc'}}>{item ? (pos || '11') : ''}</div><div style={{width: '30%', borderRight:'1px solid #ffcccc', fontWeight:'bold'}}>{item ? (item.code + (item.modifier ? ' '+item.modifier : '')) : ''}</div><div style={{width: '10%', borderRight:'1px solid #ffcccc'}}>{item ? 'A' : ''}</div><div style={{width: '15%', borderRight:'1px solid #ffcccc', textAlign:'right', paddingRight:'4px'}}>{item ? '150 00' : ''}</div><div style={{width: '10%', borderRight:'1px solid #ffcccc'}}>{item ? '1' : ''}</div><div style={{width: '15%'}}>{item ? '' : ''}</div></div>); })}</div></div>
+                    <div className="cms-row"><div className="cms-box" style={{flex: 1}}></div><div className="cms-box" style={{flex: 1}}><div className="cms-label">28. TOTAL CHARGE</div><div className="cms-input text-right pr-2">$ {procedureCodes.length * 150}.00</div></div><div className="cms-box" style={{flex: 1}}><div className="cms-label">29. AMOUNT PAID</div><div className="cms-input">$ 0.00</div></div></div>
+                </div>
+            );
+        };
+
+        // --- UB04 Form (Existing) ---
+        const UB04Form = ({ diagnosisCodes, procedureCodes }) => {
+            return (
+                <div className="ub04-sheet form-container shadow-xl">
+                    <div className="ub-grid"><div className="ub-box col-span-12"><div>1. PROVIDER NAME, ADDRESS, AND TELEPHONE NUMBER</div><div className="font-mono text-sm font-bold mt-1"></div></div><div className="ub-box col-span-12 flex flex-col justify-between"><div className="border-b border-gray-400">4. TYPE OF BILL</div><div className="font-mono font-bold text-center text-lg">0111</div></div></div>
+                    <div className="ub-grid"><div className="ub-box col-span-6"><div>8. PATIENT NAME</div><div className="font-mono font-bold">DOE, JOHN A</div></div><div className="ub-box col-span-6"><div>9. PATIENT ADDRESS</div><div className="font-mono font-bold">123 MAPLE DR</div></div><div className="ub-box col-span-3"><div>10. BIRTHDATE</div><div className="font-mono font-bold">01011980</div></div><div className="ub-box col-span-3"><div>11. SEX</div><div className="font-mono font-bold">M</div></div><div className="ub-box col-span-6"><div>12. DATE OF ADMISSION</div><div className="font-mono font-bold">010125</div></div></div>
+                    <div className="ub-grid bg-gray-100 text-[8px] font-bold text-center"><div className="col-span-2 border-r border-gray-400">42. REV CD</div><div className="col-span-10 border-r border-gray-400">43. DESCRIPTION</div><div className="col-span-4 border-r border-gray-400">44. HCPCS / RATES</div><div className="col-span-4 border-r border-gray-400">45. SERV DATE</div><div className="col-span-4">47. TOTAL CHARGES</div></div>
+                    {[0,1,2,3,4,5,6,7,8].map(idx => { const item = procedureCodes[idx]; return (<div key={idx} className="ub-grid h-6 items-center text-xs font-mono"><div className="col-span-2 text-center border-r border-gray-300">{item ? '0320' : ''}</div><div className="col-span-10 px-2 border-r border-gray-300 truncate font-bold text-black">{item ? item.title.substring(0,40) : ''}</div><div className="col-span-4 text-center border-r border-gray-300 font-bold">{item ? item.code : ''}</div><div className="col-span-4 text-center border-r border-gray-300">{item ? '010125' : ''}</div><div className="col-span-4 text-right px-2 font-bold">{item ? '150.00' : ''}</div></div>); })}
+                    <div className="ub-grid border-t-2 border-black mt-4"><div className="ub-box col-span-24"><div className="font-bold mb-1">66. DIAGNOSIS CODES (ICD-10)</div><div className="flex gap-2 p-1">{diagnosisCodes.map((d, i) => (<div key={i} className="border border-black px-2 font-mono font-bold">{d.icd10 || d.code}</div>))}</div></div></div>
+                </div>
+            );
+        };
+
+        // --- Main Screens (Unchanged Components condensed for space) ---
+        const Dashboard = ({ onSearchClick, history, favorites, onCodeClick, onRemoveFav }) => {
+            // Calculate total value (Re-used logic for consistency, though Dashboard has different layout)
+            return (
+                <div className="p-8 space-y-8 animate-in fade-in duration-500 h-full overflow-y-auto custom-scroll">
+                    <div className="text-center space-y-4 mb-8">
+                        <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">MedCode<span className="text-blue-600">Pro</span></h1>
+                        <p className="text-gray-500 max-w-lg mx-auto">Unified coding dashboard for ICD-11, HCPCS, and CPT®.</p>
+                        <div className="flex flex-col items-center gap-2">
+                            <button onClick={onSearchClick} className="w-full max-w-xl mx-auto bg-white border-2 border-blue-100 hover:border-blue-400 text-left px-6 py-4 rounded-2xl shadow-sm text-gray-400 flex items-center gap-3 transition-all group"><Icon path={Icons.Search} className="text-blue-500 group-hover:scale-110 transition-transform" /><span>Start searching for a diagnosis or procedure...</span></button>
+                            <span className="text-xs text-gray-400 font-medium flex items-center gap-1"><Icon path={Icons.Command} size={12} /> Press Ctrl+K for Command Palette</span>
+                        </div>
+                    </div>
+                    {/* Quick Stats Row (Simplified for Main Dashboard) */}
+                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center gap-3"><div className="bg-blue-100 p-3 rounded-full text-blue-600"><Icon path={Icons.FileText} size={20} /></div><div><p className="text-xs text-gray-500 uppercase font-bold">Recent Activity</p><h3 className="font-bold text-gray-800">{history.length} Items</h3></div></div>
+                        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center gap-3"><div className="bg-yellow-100 p-3 rounded-full text-yellow-600"><Icon path={Icons.Star} size={20} fill="currentColor" /></div><div><p className="text-xs text-gray-500 uppercase font-bold">Superbill Items</p><h3 className="font-bold text-gray-800">{favorites.length} Saved</h3></div></div>
+                        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center gap-3"><div className="bg-green-100 p-3 rounded-full text-green-600"><Icon path={Icons.TrendingUp} size={20} /></div><div><p className="text-xs text-gray-500 uppercase font-bold">System Status</p><h3 className="font-bold text-gray-800">Online</h3></div></div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100"><div className="flex items-center gap-2 mb-4"><Icon path={Icons.Activity} className="text-rose-500" /><h2 className="font-bold text-gray-900">Trending Now</h2></div><div className="space-y-3">{TRENDING_CODES.map((item, idx) => (<div key={idx} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer group" onClick={() => onCodeClick(item)}><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center font-bold text-xs group-hover:bg-rose-100 transition-colors">#{idx+1}</div><div><div className="font-mono font-bold text-gray-900">{item.code}</div><div className="text-xs text-gray-500 truncate max-w-[120px]">{item.title}</div></div></div><Badge type={item.source} /></div>))}</div></div>
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100"><div className="flex items-center gap-2 mb-4"><Icon path={Icons.Clock} className="text-blue-500" /><h2 className="font-bold text-gray-900">Recently Viewed</h2></div>{history.length === 0 ? <div className="text-center text-gray-400 py-8 text-sm">No history yet.</div> : <div className="space-y-3">{history.slice(0, 5).map((item, idx) => (<div key={idx} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer" onClick={() => onCodeClick(item)}><div><div className="font-mono font-bold text-gray-900">{item.code}</div><div className="text-xs text-gray-500 truncate max-w-[180px]">{item.title}</div></div><Badge type={item.source} /></div>))}</div>}</div>
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100"><div className="flex items-center gap-2 mb-4"><Icon path={Icons.Star} className="text-yellow-500" fill="currentColor" /><h2 className="font-bold text-gray-900">My Superbill</h2></div>{favorites.length === 0 ? <div className="text-center text-gray-400 py-8 text-sm">Star items in search to add them here.</div> : <div className="space-y-3 max-h-[400px] overflow-y-auto custom-scroll">{favorites.map((item, idx) => (<div key={idx} className="flex items-center justify-between p-3 hover:bg-yellow-50 rounded-lg cursor-pointer border border-transparent hover:border-yellow-200" onClick={() => onCodeClick(item)}><div><div className="font-mono font-bold text-gray-900">{item.code}</div><div className="text-xs text-gray-500 truncate max-w-[150px]">{item.title}</div></div><button onClick={(e) => {e.stopPropagation(); onRemoveFav(item);}} className="text-gray-300 hover:text-red-400"><Icon path={Icons.Trash} size={16} /></button></div>))}</div>}</div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
+                        <DailyChallenge />
+                    </div>
+                </div>
+            );
+        };
+
+        const SearchScreen = ({ onAddToForm, onCodeClick, favorites, onToggleFav, onAuth }) => {
+            const [mode, setMode] = useState('icd11');
+            const [query, setQuery] = useState('');
+            const [specialty, setSpecialty] = useState('All');
+            const [results, setResults] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const queryRef = useRef(query); // To prevent race conditions
+
+            useEffect(() => {
+                queryRef.current = query;
+                if (mode === 'cpt' && query.length < 2) {
+                    const mockData = MOCK_CPT_DB.map(i => ({...i, source: 'CPT (Mock)'}));
+                    const filteredMock = specialty === 'All' ? mockData : mockData.filter(i => i.specialty === specialty);
+                    setResults(filteredMock);
+                    return;
+                }
+                if (mode !== 'cpt' && query.length < 2) { setResults([]); return; }
+                const timer = setTimeout(() => { fetchCodes(); }, 400);
+                return () => clearTimeout(timer);
+            }, [query, mode, specialty]);
+
+            const fetchCodes = async () => {
+                setLoading(true);
+                let data = [];
+                const currentQ = queryRef.current;
+                try {
+                    if (mode === 'icd11') {
+                        const res = await fetch(`https://clinicaltables.nlm.nih.gov/api/icd11_codes/v3/search?terms=${encodeURIComponent(currentQ)}&sf=code,title&df=code,title`);
+                        const json = await res.json();
+                        // Check for stale request
+                        if (queryRef.current !== currentQ) return; 
+                        if (json[3]) {
+                            data = json[3].map(i => ({ 
+                                code: i[0], 
+                                title: i[1], 
+                                source: 'ICD-11',
+                                icd10: getIcd10Map(i[0], i[1]) // Auto-Convert
+                            }));
+                        }
+                    } else if (mode === 'hcpcs') {
+                        const res = await fetch(`https://clinicaltables.nlm.nih.gov/api/hcpcs/v3/search?terms=${encodeURIComponent(currentQ)}&sf=code,short_desc&df=code,short_desc`);
+                        const json = await res.json();
+                        if (queryRef.current !== currentQ) return;
+                        if (json[3]) data = json[3].map(i => ({ code: i[0], title: i[1], source: 'HCPCS' }));
+                    } else if (mode === 'cpt') {
+                        data = MOCK_CPT_DB.filter(i => {
+                            const matchQuery = i.code.startsWith(currentQ) || i.title.toLowerCase().includes(currentQ.toLowerCase());
+                            const matchSpecialty = specialty === 'All' || i.specialty === specialty;
+                            return matchQuery && matchSpecialty;
+                        }).map(i => ({ ...i, source: 'CPT (Mock)' }));
+                    }
+                    setResults(data);
+                } catch (e) { console.error(e); } finally { setLoading(false); }
+            };
+
+            return (
+                <div className="h-full flex flex-col animate-in slide-in-from-right-4 duration-300">
+                    <div className="flex border-b border-gray-200 bg-white"><SearchTab active={mode === 'icd11'} onClick={() => { setMode('icd11'); setQuery(''); setResults([]); }} icon={Icons.Activity} label="ICD-11 (Dx)" /><SearchTab active={mode === 'hcpcs'} onClick={() => { setMode('hcpcs'); setQuery(''); setResults([]); }} icon={Icons.Syringe} label="HCPCS (L2)" /><SearchTab active={mode === 'cpt'} onClick={() => { setMode('cpt'); setQuery(''); setResults([]); }} icon={Icons.FileText} label="CPT (L1)" /></div>
+                    <div className="bg-white border-b border-gray-200 p-6 space-y-4">
+                        {mode === 'cpt' && <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-3"><Icon path={Icons.AlertTriangle} size={20} className="text-amber-500 shrink-0 mt-0.5" /><div><p className="text-sm font-bold text-amber-800">Demo Data Only</p><p className="text-xs text-amber-700 mt-1">CPT® codes are proprietary (AMA). This tab uses a limited <strong>mock database</strong> for demonstration.</p></div></div>}
+                        <div className="relative"><Icon path={Icons.Search} className="absolute left-4 top-3.5 text-gray-400" /><input type="text" className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-50 outline-none" placeholder="Search..." value={query} onChange={(e) => setQuery(e.target.value)} autoFocus />{loading && <div className="absolute right-4 top-3.5 animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>}</div>
+                    </div>
+                    <div className="flex-1 overflow-y-auto bg-gray-50 p-4 space-y-2 custom-scroll">
+                        {results.map((item, idx) => {
+                            const isFav = favorites.some(f => f.code === item.code);
+                            const estPayment = item.rvu ? (item.rvu * CF_2025).toFixed(2) : null;
+                            return (
+                                <div key={idx} className="bg-white p-4 rounded-xl border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all flex justify-between group items-start">
+                                    <div className="cursor-pointer flex-1" onClick={() => onCodeClick(item)}>
+                                        <div className="flex items-center gap-2 mb-1"><span className="font-mono text-lg font-bold text-gray-900 bg-gray-50 px-2 rounded">{item.code}</span><Badge type={item.source} /></div>
+                                        <p className="text-sm text-gray-600">{item.title}</p>
+                                        <div className="flex items-center gap-2 mt-2">
+                                            {estPayment && <span className="text-xs font-bold text-green-700 bg-green-50 px-2 py-1 rounded border border-green-200 flex items-center gap-1"><span className="text-[10px] text-green-600 uppercase">Est. Pay:</span> ${estPayment}</span>}
+                                            {item.icd10 && <span className="text-xs font-bold text-purple-700 bg-purple-50 px-2 py-1 rounded border border-purple-200 flex items-center gap-1"><Icon path={Icons.Refresh} size={12} /> Map: {item.icd10}</span>}
+                                            {item.priorAuth && <button onClick={(e) => { e.stopPropagation(); onAuth(item); }} className="text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 px-2 py-1 rounded flex items-center gap-1 shadow"><Icon path={Icons.Brain} size={12} /> Check Prior Auth</button>}
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={() => onToggleFav(item)} className={`p-2 rounded-lg transition-colors ${isFav ? 'text-yellow-400' : 'text-gray-300 hover:text-yellow-400'}`}><Icon path={Icons.Star} size={18} fill={isFav ? "currentColor" : "none"} /></button>
+                                        <button onClick={() => onAddToForm(item)} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100" title="Add to Bill"><Icon path={Icons.Plus} size={18} /></button>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        };
+
+        const ToolsScreen = () => {
+            const [searchTerm, setSearchTerm] = useState('');
+            return (
+                <div className="p-8 space-y-8 animate-in slide-in-from-right-4 duration-300 h-full overflow-y-auto custom-scroll">
+                    <div><h1 className="text-2xl font-bold text-gray-900 mb-2">Coding Tools & Reference</h1><p className="text-gray-500">Quick lookups for modifiers and place of service codes.</p></div>
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200"><div className="flex items-center justify-between mb-4"><h3 className="font-bold text-gray-800 flex items-center gap-2"><Icon path={Icons.Tool} className="text-blue-500" /> Common Modifiers</h3><input type="text" placeholder="Filter..." className="bg-gray-50 border rounded px-2 py-1 text-sm" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div><div className="space-y-2">{MODIFIERS.filter(m => m.code.includes(searchTerm) || m.desc.toLowerCase().includes(searchTerm.toLowerCase())).map(m => (<div key={m.code} className="flex gap-4 p-2 border-b border-gray-100 hover:bg-blue-50 rounded"><span className="font-mono font-bold text-blue-700 w-12">{m.code}</span><span className="text-sm text-gray-600">{m.desc}</span></div>))}</div></div>
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200"><h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Icon path={Icons.Home} className="text-emerald-500" /> Place of Service (POS) Codes</h3><div className="grid grid-cols-2 gap-4">{POS_CODES.map(p => (<div key={p.code} className="flex items-center gap-3 p-2 border rounded-lg bg-gray-50"><div className="bg-emerald-100 text-emerald-800 font-bold font-mono px-2 py-1 rounded">{p.code}</div><div className="text-sm font-medium">{p.desc}</div></div>))}</div></div>
+                </div>
+            );
+        };
+
+        const BillingScreen = ({ items, onRemove, onScrub, onUpdateModifier, onEstimate, onCheckEligibility }) => {
+            const [pos, setPos] = useState('11');
+            const [formType, setFormType] = useState('CMS-1500');
+            const diagnosisCodes = items.filter(i => i.source === 'ICD-11');
+            const procedureCodes = items.filter(i => i.source !== 'ICD-11');
+
+            return (
+                <div className="p-8 h-full overflow-y-auto animate-in slide-in-from-bottom-4 duration-300">
+                    <div className="flex justify-between items-center mb-6">
+                        <div><h2 className="text-2xl font-bold text-gray-900">Billing Preview</h2><p className="text-sm text-gray-500">Simulated CMS-1500 form.</p></div>
+                        <div className="flex gap-3 items-center">
+                            <div className="flex bg-gray-100 p-1 rounded-lg mr-4"><button onClick={() => setFormType('CMS-1500')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${formType === 'CMS-1500' ? 'bg-white shadow text-blue-700' : 'text-gray-500'}`}>CMS-1500</button><button onClick={() => setFormType('UB-04')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${formType === 'UB-04' ? 'bg-white shadow text-blue-700' : 'text-gray-500'}`}>UB-04</button></div>
+                            
+                            <button onClick={onCheckEligibility} className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg shadow flex items-center gap-2 text-sm font-bold"><Icon path={Icons.UserCheck} size={16} /> Check Eligibility</button>
+                            <div className="flex items-center gap-2 bg-white px-3 py-2 rounded border border-gray-300"><span className="text-xs font-bold text-gray-500">POS:</span><select value={pos} onChange={e => setPos(e.target.value)} className="text-sm font-bold outline-none bg-transparent cursor-pointer">{POS_CODES.map(p => <option key={p.code} value={p.code}>{p.code} - {p.desc}</option>)}</select></div>
+                            <button onClick={onEstimate} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg shadow flex items-center gap-2 text-sm font-bold"><Icon path={Icons.Calculator} size={16} /> Patient Cost</button>
+                            <button onClick={onScrub} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow flex items-center gap-2 text-sm font-bold"><Icon path={Icons.ShieldAlert} size={16} /> Scrub Claim</button>
+                        </div>
+                    </div>
+                    
+                    {procedureCodes.length > 0 && (
+                        <div className="mb-6 bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+                            <h3 className="text-xs font-bold text-gray-500 uppercase mb-3">Procedure Details (Add Modifiers)</h3>
+                            <div className="space-y-2">{items.map((item, idx) => { if (item.source === 'ICD-11') return null; return (<div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-100"><div className="flex items-center gap-3"><span className="font-mono font-bold text-blue-800">{item.code}</span><span className="text-xs text-gray-600 truncate max-w-[200px]">{item.title}</span></div><div className="flex items-center gap-2"><select className="text-xs border border-gray-300 rounded px-2 py-1 bg-white" value={item.modifier || ""} onChange={(e) => onUpdateModifier(item, e.target.value)}><option value="">No Mod</option>{MODIFIERS.map(m => <option key={m.code} value={m.code}>{m.code}</option>)}</select><button onClick={() => onRemove(idx)} className="text-red-400 hover:text-red-600"><Icon path={Icons.Trash} size={14} /></button></div></div>); })}</div>
+                        </div>
+                    )}
+                    <div className="flex justify-center w-full max-w-[850px] overflow-x-auto mx-auto">
+                        {formType === 'CMS-1500' ? <CMS1500Form diagnosisCodes={diagnosisCodes} procedureCodes={procedureCodes} pos={pos} /> : <UB04Form diagnosisCodes={diagnosisCodes} procedureCodes={procedureCodes} />}
+                    </div>
+                    <div className="mt-4 text-center text-sm text-gray-500"><button className="text-red-500 underline" onClick={() => items.forEach((_,i) => onRemove(0))}>Clear All</button></div>
+                </div>
+            );
+        };
+
+        // --- App ---
+        const App = () => {
+            const [view, setView] = useState('dashboard');
+            const [history, setHistory] = useState([]);
+            const [favorites, setFavorites] = useState([]);
+            const [billItems, setBillItems] = useState([]);
+            const [toast, setToast] = useState(null);
+            const [cdiItem, setCdiItem] = useState(null);
+            const [riskReport, setRiskReport] = useState(null);
+            const [showEstimator, setShowEstimator] = useState(false);
+            const [showEligibility, setShowEligibility] = useState(false);
+            const [authItem, setAuthItem] = useState(null);
+            const [showPalette, setShowPalette] = useState(false);
+            const [showAppeal, setShowAppeal] = useState(false);
+
+            useEffect(() => { try { const h = localStorage.getItem('medCodeHistory'); if (h) setHistory(JSON.parse(h) || []); const f = localStorage.getItem('medCodeFavs'); if (f) setFavorites(JSON.parse(f) || []); } catch (e) { console.error("Storage Error", e); localStorage.removeItem('medCodeHistory'); localStorage.removeItem('medCodeFavs'); } }, []);
+
+            // Keydown Listener for Palette
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); setShowPalette(prev => !prev); }
+                    if (e.key === 'Escape' || e.code === 'Escape') { setShowPalette(false); }
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, []);
+
+            const addToHistory = (item) => { const newHistory = [item, ...history.filter(h => h.code !== item.code)].slice(0, 10); setHistory(newHistory); localStorage.setItem('medCodeHistory', JSON.stringify(newHistory)); };
+            const toggleFav = (item) => { const exists = favorites.some(f => f.code === item.code); const newFavs = exists ? favorites.filter(f => f.code !== item.code) : [...favorites, item]; setFavorites(newFavs); localStorage.setItem('medCodeFavs', JSON.stringify(newFavs)); showToast(exists ? "Removed from Favorites" : "Added to Favorites"); };
+            const handleAddToForm = (item) => { const isUnspecified = item.title.toLowerCase().includes('unspecified') || item.title.toLowerCase().includes('not specified'); if (isUnspecified && item.source === 'ICD-11') { setCdiItem(item); } else { setBillItems([...billItems, { ...item, modifier: '' }]); showToast(`Added ${item.code} to form`); } };
+            const updateModifier = (targetItem, mod) => { const newItems = billItems.map(i => (i === targetItem ? { ...i, modifier: mod } : i)); setBillItems(newItems); };
+            const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
+
+            const scrubClaim = () => {
+                const diagnosisCodes = billItems.filter(i => i.source === 'ICD-11');
+                const procedureCodes = billItems.filter(i => i.source !== 'ICD-11');
+                const risks = [];
+                let riskLevel = 'Low';
+
+                if (diagnosisCodes.length === 0) risks.push({ severity: 'High', message: "Missing Diagnosis Code." });
+                if (procedureCodes.length === 0) risks.push({ severity: 'High', message: "Missing Procedure Code." });
+
+                const emCodesWith59 = procedureCodes.filter(p => p.category === 'E&M' && p.modifier === '59');
+                if (emCodesWith59.length > 0) { risks.push({ severity: 'High', message: "Modifier 59 on E&M code." }); riskLevel = 'High'; }
+
+                const newPatientCodes = procedureCodes.filter(p => p.code && p.code.startsWith('9920'));
+                if (newPatientCodes.length > 0) { risks.push({ severity: 'High', message: `New Patient Code (${newPatientCodes[0].code}) detected.` }); riskLevel = 'High'; }
+
+                const level5Codes = procedureCodes.filter(p => p.code && p.code.endsWith('5') && (p.code.startsWith('9921') || p.code.startsWith('9920')));
+                if (level5Codes.length > 0) { 
+                    risks.push({ severity: 'Medium', message: `Level 5 E&M Code (${level5Codes[0].code}) detected. Ensure documentation supports High Complexity decision making.` }); 
+                    if (riskLevel !== 'High') riskLevel = 'Medium'; 
+                }
+
+                setRiskReport({ level: riskLevel, items: risks });
+            };
+
+            const totalCharges = billItems.filter(i => i.source !== 'ICD-11').length * 150;
+
+            return (
+                <div className="flex h-screen overflow-hidden bg-slate-50">
+                    {cdiItem && <CDIModal item={cdiItem} onClose={() => setCdiItem(null)} onConfirm={() => { setBillItems([...billItems, { ...cdiItem, modifier: '' }]); setCdiItem(null); showToast("Added unspecified code to form"); }} />}
+                    {riskReport && <RiskReportModal risks={riskReport} onClose={() => setRiskReport(null)} onAppeal={() => { setRiskReport(null); setShowAppeal(true); }} />}
+                    {showEstimator && <PatientEstimatorModal total={totalCharges} onClose={() => setShowEstimator(false)} />}
+                    {showEligibility && <EligibilityModal onClose={() => setShowEligibility(false)} />}
+                    {authItem && <PriorAuthModal item={authItem} onClose={() => setAuthItem(null)} />}
+                    
+                    {/* New Components */}
+                    <CommandPalette isOpen={showPalette} onClose={() => setShowPalette(false)} onAdd={handleAddToForm} />
+                    {showAppeal && riskReport && <AppealModal risks={riskReport} onClose={() => setShowAppeal(false)} />}
+                    {showAppeal && !riskReport && <AppealModal risks={{items: []}} onClose={() => setShowAppeal(false)} />}
+
+                    <div className="w-64 bg-white border-r border-gray-200 flex-shrink-0 flex flex-col justify-between py-6 shadow-sm z-10">
+                        <div className="px-6"><div className="flex items-center gap-2 mb-8 text-blue-700 font-bold text-xl"><Icon path={Icons.Activity} /><span>MedCode</span></div><nav className="space-y-2">
+                            <NavItem active={view === 'dashboard'} onClick={() => setView('dashboard')} icon={Icons.Home} label="Dashboard" />
+                            <NavItem active={view === 'analytics'} onClick={() => setView('analytics')} icon={Icons.BarChart || Icons.TrendingUp} label="Analytics" />
+                            <NavItem active={view === 'search'} onClick={() => setView('search')} icon={Icons.Search} label="Search Codes" />
+                            <NavItem active={view === 'form'} onClick={() => setView('form')} icon={Icons.Clipboard} label="Billing Form" />
+                            <NavItem active={view === 'tools'} onClick={() => setView('tools')} icon={Icons.Tool} label="Tools & Ref" />
+                        </nav></div>
+                        <div className="px-6"><div className="bg-blue-50 rounded-xl p-4 text-xs text-blue-800 border border-blue-100"><strong className="block mb-1">Local Mode</strong>Browser storage active.</div></div>
+                    </div>
+                    <div className="flex-1 flex flex-col relative overflow-hidden">
+                        {view === 'dashboard' && <Dashboard onSearchClick={() => setView('search')} history={history} favorites={favorites} onCodeClick={(item) => {addToHistory(item); showToast("Viewed");}} onRemoveFav={toggleFav} />}
+                        {view === 'analytics' && <RevenueAnalytics favorites={favorites} />}
+                        {view === 'search' && <SearchScreen onAddToForm={handleAddToForm} onCodeClick={(item) => {addToHistory(item); showToast("Viewed code");}} favorites={favorites} onToggleFav={toggleFav} onAuth={setAuthItem} />}
+                        {view === 'form' && <BillingScreen items={billItems} onRemove={(idx) => setBillItems(billItems.filter((_, i) => i !== idx))} onScrub={scrubClaim} onUpdateModifier={updateModifier} onEstimate={() => setShowEstimator(true)} onCheckEligibility={() => setShowEligibility(true)} />}
+                        {view === 'tools' && <ToolsScreen />}
+                        {toast && <div className="absolute bottom-6 right-6 bg-gray-900 text-white px-4 py-3 rounded-lg shadow-lg text-sm flex items-center gap-2 animate-bounce z-50"><Icon path={Icons.CheckCircle} size={16} />{toast}</div>}
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
